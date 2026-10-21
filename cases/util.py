@@ -99,7 +99,9 @@ class Capture:
         if not alive:
             raise Blocked(f"{self.host.name} 캡처가 송신이 끝나기 전에 끝남 (seconds={self.seconds} 가 짧음)")
         m = re.search(r"(\d+) packets? dropped by kernel", err)
-        if m and int(m.group(1)) > 0:
+        if not m:  # 통계 줄이 없으면 놓친 패킷이 있었는지 알 수 없다
+            raise Blocked(f"{self.host.name} 캡처 통계(dropped by kernel)를 읽지 못함")
+        if int(m.group(1)) > 0:
             raise Blocked(f"{self.host.name} 캡처 중 커널이 패킷 {m.group(1)}개를 버림")
         return False
 

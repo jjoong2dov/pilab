@@ -181,3 +181,12 @@ def test_baseline_must_pass_even_if_not_run(lab, tmp_path, registry):
             root=tmp_path / "results", log=lambda *_: None)
     res = {x["id"]: x for x in r.execute()}
     assert res["A-1"]["status"] == "BLOCKED" and "B-0" in res["A-1"]["reason"]
+
+
+def test_plan_rejects_duplicate_id_and_missing_file(tmp_path):
+    p = tmp_path / "plan.xlsx"
+    plan.new_plan(p, [("A-1", "X", "a", "c", ""), ("A-1", "X", "b", "c", "")])
+    with pytest.raises(SystemExit, match="같은 ID"):
+        plan.read_plan(p)
+    with pytest.raises(SystemExit, match="시험표가 없습니다"):
+        plan.read_plan(tmp_path / "none.xlsx")

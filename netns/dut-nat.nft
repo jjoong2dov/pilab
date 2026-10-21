@@ -2,6 +2,7 @@
 table ip pilab {
     chain forward {
         type filter hook forward priority filter; policy drop;
+        iifname != { "br0.200", "br0.201" } accept   # 시험 VLAN 이 아닌 전달(컨테이너·VPN 등)은 건드리지 않는다
         ct state established,related accept
         iifname "br0.200" oifname "br0.201" accept
     }

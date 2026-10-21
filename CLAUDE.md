@@ -19,7 +19,7 @@
 
 ## 작업 순서
 1. 바꿀 내용을 짧게 계획하고 확인받는다.
-2. 코드를 고친 뒤 `pytest -q` (장비 없이 도는 단위 시험) 를 통과시킨다.
+2. 코드를 고친 뒤 `.venv/bin/python -m pytest -q` (장비 없이 도는 단위 시험) 를 통과시킨다.
 3. 가상 랩에서 해당 시험만 돌려 본다: `sudo .venv/bin/python -m pitest run --lab lab.netns.yaml --plan plan/plan.xlsx --only 'ID'`
 4. 다른 AI(Codex)에게 diff 리뷰를 받는다. 불필요한 주석, 추측으로 넣은 코드, 쓰지 않는 코드를 지운다.
 5. 결과는 한국어로 짧게 보고한다: 무엇을 바꿨고, 무엇을 돌렸고, 결과가 어땠는지.

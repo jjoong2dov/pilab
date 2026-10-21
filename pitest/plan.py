@@ -59,11 +59,17 @@ def _style(ws):
 
 def read_plan(path):
     """[{id, area, title, criteria, status}] 를 시험표 순서대로 돌려준다."""
+    if not Path(path).exists():
+        raise SystemExit(f"시험표가 없습니다: {path}\n먼저 만드십시오: .venv/bin/python plan/make_plan.py")
     ws = load_workbook(path, read_only=True)[SHEET]
-    items = []
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    items, seen = [], {}
+    for n, row in enumerate(ws.iter_rows(min_row=2, values_only=True), 2):
         if not row or not row[0]:
             continue
+        tid = str(row[0]).strip()
+        if tid in seen:
+            raise SystemExit(f"시험표에 같은 ID 가 두 번 있습니다: {tid} ({seen[tid]}행, {n}행)")
+        seen[tid] = n
         items.append({"id": str(row[0]).strip(), "area": row[1], "title": row[2],
                       "criteria": row[3], "status": (row[4] or "").strip()})
     return items

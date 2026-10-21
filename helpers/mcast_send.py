@@ -12,7 +12,7 @@ ap.add_argument("--seconds", type=float, default=3)
 a = ap.parse_args()
 
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 4)
+s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
 if a.src:
     s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(a.src))
 sent, end = 0, time.time() + a.seconds

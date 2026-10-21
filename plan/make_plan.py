@@ -32,6 +32,10 @@ ROWS = [
 ]
 
 if __name__ == "__main__":
-    out = Path(sys.argv[1] if len(sys.argv) > 1 else Path(__file__).with_name("plan.xlsx"))
+    args = [a for a in sys.argv[1:] if a != "--force"]
+    out = Path(args[0] if args else Path(__file__).with_name("plan.xlsx"))
+    if out.exists() and "--force" not in sys.argv:
+        # 이미 결과가 쌓인 시험표를 새로 만들면 결과와 실행이력이 사라진다
+        sys.exit(f"{out} 가 이미 있습니다. 새로 만들려면 다른 파일 이름을 주거나 --force 를 붙이십시오.")
     plan.new_plan(out, ROWS)
     print(f"{out}  항목 {len(ROWS)}개")

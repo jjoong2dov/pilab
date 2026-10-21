@@ -12,6 +12,9 @@ HERE=$(dirname "$0")
 STATE=/run/pilab
 
 [ "$LAN" != "$WAN" ] || { echo "LAN 과 WAN 이 같다" >&2; exit 1; }
+for c in ip bridge nft ss sysctl; do
+    command -v "$c" >/dev/null || { echo "$c 명령이 없다: sudo apt install iproute2 nftables procps" >&2; exit 1; }
+done
 for p in "$LAN" "$WAN"; do
     [ "$p" != "$MGMT" ] || { echo "$p 는 관리 포트다" >&2; exit 1; }
     ip link show "$p" >/dev/null 2>&1 || { echo "$p 없음" >&2; exit 1; }
@@ -38,15 +41,42 @@ for p in $ports; do
     fi
 done
 
-sh "$HERE/dut-reset.sh" "$LAN" "$WAN" >/dev/null 2>&1 || true
-# 여기서부터 실패하면(set -e) 바꾼 것을 되돌리고 끝낸다
-trap 'echo "설정 중 실패: 되돌린다" >&2; sh "$HERE/dut-reset.sh" "$LAN" "$WAN"' EXIT
-# 되돌릴 때 쓸 원래 상태
+# 전에 이 스크립트로 설정한 것이 남아 있으면(/run/pilab 기록이 있으면) 먼저 되돌린다.
+# 기록 없이 br0 이나 pilab 표가 있으면 이 스크립트가 만든 것이 아니므로 멈춘다.
+if [ -d "$STATE" ]; then
+    sh "$HERE/dut-reset.sh" || { echo "이전 설정을 되돌리지 못했다. 위 메시지를 보고 정리한 뒤 다시 하라." >&2; exit 1; }
+fi
+# 기록 없이 같은 이름이 있으면 이 스크립트가 만든 것이 아니므로 멈춘다
+for d in br0 br0.200 br0.201; do
+    if ip link show "$d" >/dev/null 2>&1; then
+        echo "$d 가 이미 있다. 이 스크립트가 만든 것이 아니므로 지우지 않고 멈춘다." >&2
+        exit 1
+    fi
+done
+if nft list table ip pilab >/dev/null 2>&1; then
+    echo "nft 표 pilab 이 이미 있다. 이 스크립트가 만든 것이 아니므로 지우지 않고 멈춘다." >&2
+    exit 1
+fi
+# 이미 다른 브리지·본드에 들어 있는 포트는 그 설정의 일부이므로 건드리지 않는다
+for p in "$LAN" "$WAN"; do
+    if ip -o link show "$p" | grep -q " master "; then
+        echo "$p 는 이미 다른 브리지나 본드에 들어 있다. 시험 전용 포트를 고르라." >&2
+        exit 1
+    fi
+done
+# 되돌릴 때 쓸 원래 상태. 기록부터 남기고 나서 바꾼다.
 mkdir -p "$STATE"
+echo "$LAN $WAN" > "$STATE/ports"
+# 여기서부터 실패하면(set -e) 바꾼 것을 되돌리고 끝낸다
+trap 'echo "설정 중 실패: 되돌린다" >&2; sh "$HERE/dut-reset.sh"' EXIT
+trap 'exit 1' HUP INT TERM   # 신호로 끊겨도 EXIT 정리를 거치게 한다
 sysctl -n net.ipv4.ip_forward > "$STATE/ip_forward"
 if command -v nmcli >/dev/null; then
     for p in "$LAN" "$WAN"; do
-        nmcli -g GENERAL.STATE device show "$p" | grep -q unmanaged && echo no > "$STATE/managed.$p" || echo yes > "$STATE/managed.$p"
+        # 원래 관리 상태(yes/no). 읽지 못하면 추측하지 않고 멈춘다
+        m=$(LC_ALL=C nmcli -g GENERAL.NM-MANAGED device show "$p") && { [ "$m" = yes ] || [ "$m" = no ]; } ||
+            { echo "$p 의 NetworkManager 관리 상태를 읽지 못했다" >&2; exit 1; }
+        echo "$m" > "$STATE/managed.$p"
         nmcli device set "$p" managed no
     done
 fi

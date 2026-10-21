@@ -16,7 +16,7 @@ hosts:
   pc:
     transport: local
     sudo: true
-    vars: {nic: enx00e04c680001, ip: 192.0.2.10, ip_vlan100: 192.0.2.110, lan_ip: 203.0.113.10, vlan_lan: pl200}
+    vars: {nic: enx00005e005301, ip: 192.0.2.10, ip_vlan100: 192.0.2.110, lan_ip: 203.0.113.10, vlan_lan: pl200}
   dut:
     transport: ssh
     target: pi@pilab-a.local

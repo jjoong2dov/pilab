@@ -12,7 +12,9 @@
 
 import argparse
 import importlib
+import os
 import pkgutil
+import signal
 import sys
 from pathlib import Path
 
@@ -85,6 +87,7 @@ def cmd_run(args, only=None, resume=None):
             results = run.results  # 끊기기 전까지의 결과는 엑셀에 남긴다
         # 엑셀도 잠금 안에서 쓴다. 다른 실행이 같은 시험표를 동시에 저장하면 한쪽이 사라진다.
         unknown = plan.apply_results(args.plan, results, run.meta, run.dir)
+        give_back(run.dir, args.plan)
     if unknown:
         print(f"시험표에 없는 결과: {', '.join(unknown)}")
     print(report.summary(run.dir))
@@ -93,6 +96,21 @@ def cmd_run(args, only=None, resume=None):
               f"랩 상태를 확인(필요하면 초기화)하고 같은 옵션에 --resume {run.dir} 를 붙여 이어서 돌리세요.")
         return 3
     return 0 if all(r["status"] in ("PASS", "SKIP") for r in results) else 1
+
+
+def give_back(*paths):
+    """sudo 로 돌렸으면 결과 폴더와 시험표의 주인을 sudo 를 부른 사용자로 돌려준다.
+    그러지 않으면 다음에 sudo 없이 시험표를 열어 고치거나 결과를 지울 때 권한 오류가 난다."""
+    uid, gid = os.environ.get("SUDO_UID"), os.environ.get("SUDO_GID")
+    if os.geteuid() != 0 or not uid or not gid:
+        return
+    for p in map(Path, paths):
+        # 심볼릭 링크는 따라가지 않는다(링크가 가리키는 바깥 파일의 주인을 바꾸지 않게)
+        for q in [p, *(p.rglob("*") if p.is_dir() and not p.is_symlink() else [])]:
+            os.lchown(q, int(uid), int(gid))
+        # results/ 폴더 자체는 이번에 root 로 만들어진 경우에만 돌려준다
+        if p.is_dir() and p.parent.stat().st_uid == 0:
+            os.lchown(p.parent, int(uid), int(gid))
 
 
 def cmd_rerun_failed(args):
@@ -137,6 +155,13 @@ def main(argv=None):
         for c in select():
             print(f"{c.id:10} {c.area:6} {c.title}{'  [BASELINE]' if c.baseline else ''}")
         return 0
+    if args.cmd in ("run", "rerun-failed"):
+        # 스크립트나 nohup 으로 띄운 백그라운드 실행은 SIGINT 를 무시한 채로 시작한다.
+        # 그래도 kill -INT 나 kill(TERM)로 멈추면 Ctrl-C 와 똑같이 복구하고 끝나게 한다.
+        def stop(signum, frame):
+            raise KeyboardInterrupt
+        signal.signal(signal.SIGINT, stop)
+        signal.signal(signal.SIGTERM, stop)
     if args.cmd == "run":
         return cmd_run(args)
     if args.cmd == "rerun-failed":

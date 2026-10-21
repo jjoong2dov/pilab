@@ -62,11 +62,15 @@ def mac_ageing(ctx):
     # 시험 전용 MAC 을 가진 macvlan 을 잠깐 만들어 몇 번 말하게 한 뒤 지운다.
     d, pc = ctx.dut, ctx.pc
     old = d.run("cat /sys/class/net/br0/bridge/ageing_time", check=True).out.strip()
-    d.run("ip link set br0 type bridge ageing_time 500", check=True)  # 5초 (단위 1/100초)
+    # 복구는 바꾸기 전에 등록한다. 바꾸는 명령이 시간 초과로 끝나도(실제로는 바뀌었을 수 있다) 되돌린다.
     ctx.defer(lambda: d.run(f"ip link set br0 type bridge ageing_time {int(old)}", check=True), "에이징 시간 복원")
+    d.run("ip link set br0 type bridge ageing_time 500", check=True)  # 5초 (단위 1/100초)
+    # plage 가 이미 있으면 남의 것일 수 있으므로 만들지도 지우지도 않는다
+    if pc.run("[ -e /sys/class/net/plage ]").ok:
+        raise Blocked("pc 에 plage 인터페이스가 이미 있음 (이전 시험의 흔적인지 확인)")
+    ctx.defer(lambda: pc.run("[ ! -e /sys/class/net/plage ] || ip link del plage", check=True), "시험 MAC 삭제")
     pc.run(f"ip link add link {q(pc.vars['nic'])} name plage address {TEST_MAC} type macvlan mode bridge",
            check=True)
-    ctx.defer(lambda: pc.run("[ ! -e /sys/class/net/plage ] || ip link del plage", check=True), "시험 MAC 삭제")
     pc.run("sysctl -qw net.ipv6.conf.plage.disable_ipv6=1", check=True)
     pc.run(f"ip addr add {TEST_IP}/32 dev plage && ip link set plage up", check=True)
     ping(pc, ctx.pib.vars["ip"], count=3, iface="plage")
@@ -88,9 +92,9 @@ def mtu(ctx):
     for host in (ctx.pc, ctx.pib):
         nic = q(host.vars["nic"])
         old = host.run(f"cat /sys/class/net/{nic}/mtu", check=True).out.strip()
-        host.run(f"ip link set {nic} mtu 1600", check=True)
         ctx.defer(lambda h=host, n=nic, m=int(old): h.run(f"ip link set {n} mtu {m}", check=True),
                   f"{host.name} MTU 복원")
+        host.run(f"ip link set {nic} mtu 1600", check=True)
     dst = ctx.pib.vars["ip"]
     ok = ping(ctx.pc, dst, count=5, size=1472, dont_fragment=True)
     # 1508 바이트가 보낸 쪽 선에 실제로 나갔는지, 받는 쪽에는 하나도 안 왔는지 함께 센다.

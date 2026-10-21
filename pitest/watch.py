@@ -44,7 +44,11 @@ def progress(run_dir):
 def notify(cmd, text):
     print(text, flush=True)
     if cmd:
-        subprocess.run(shlex.split(cmd) + [text], check=False)
+        # 알림이 실패하거나 멈춰도 감시는 계속한다
+        try:
+            subprocess.run(shlex.split(cmd) + [text], check=False, timeout=60)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            print(f"알림 실패: {e}", flush=True)
 
 
 def watch(run_dir, every=1800, stall=3600, notify_cmd="", once=False):

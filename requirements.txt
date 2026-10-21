@@ -1,3 +1,8 @@
-openpyxl>=3.1
-PyYAML>=6
-pytest>=8
+openpyxl==3.1.5
+et_xmlfile==2.0.0
+PyYAML==6.0.3
+pytest==9.1.1
+pluggy==1.7.0
+iniconfig==2.3.1
+packaging==26.3
+Pygments==2.21.0

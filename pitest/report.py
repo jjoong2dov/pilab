@@ -9,6 +9,8 @@ GOOD = {"PASS"}
 
 def load(run_dir):
     run_dir = Path(run_dir)
+    if not (run_dir / "run.json").exists():
+        raise SystemExit(f"결과 폴더가 아니거나 아직 결과가 없습니다: {run_dir} (results/ 아래 실행 폴더를 주십시오)")
     results = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))["results"]
     meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
     return {r["id"]: r for r in results}, meta
