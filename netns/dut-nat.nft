@@ -1,0 +1,12 @@
+# 시험 대상(DUT)의 NAT·방화벽 설정. LAN(VLAN 200) → WAN(VLAN 201) 만 새 연결을 허용한다.
+table ip pilab {
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+        ct state established,related accept
+        iifname "br0.200" oifname "br0.201" accept
+    }
+    chain postrouting {
+        type nat hook postrouting priority srcnat;
+        oifname "br0.201" masquerade
+    }
+}

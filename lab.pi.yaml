@@ -1,0 +1,29 @@
+# 라즈베리 파이 랩. 관리 연결은 Wi-Fi(mDNS 이름), 시험 트래픽은 유선.
+#   PC(USB 이더넷) ── eth0 [파이 A: DUT] eth1(USB 이더넷) ── eth0 [파이 B]
+# 시험은 PC 에서 돌린다. PC 자신이 LAN 쪽 단말(pc)이다.
+name: pi-lab
+tester: 홍길동
+dut_version_cmd: "cat /run/pilab/version"
+console_cmd: "journalctl -k --since=@{since} --no-pager -o cat"
+expect:
+  seconds: 5
+  # 아래 값은 예시다. 2장 '기준값 정하기'대로 PERF 를 5번 돌려 중앙값의 80% 로 바꾼다.
+  tcp_mbps: 300
+  udp_mbps: 100
+  udp_loss_pct: 1.0
+  leave_wait_s: 3
+hosts:
+  pc:
+    transport: local
+    sudo: true
+    vars: {nic: enx00e04c680001, ip: 192.0.2.10, ip_vlan100: 192.0.2.110, lan_ip: 203.0.113.10, vlan_lan: pl200}
+  dut:
+    transport: ssh
+    target: pi@pilab-a.local
+    sudo: true
+    vars: {lan: eth0, wan: eth1, wan_ip: 198.51.100.1, lan_gw: 203.0.113.1}
+  pib:
+    transport: ssh
+    target: pi@pilab-b.local
+    sudo: true
+    vars: {nic: eth0, ip: 192.0.2.20, ip_vlan100: 192.0.2.120, wan_ip: 198.51.100.20, vlan_wan: pl201}

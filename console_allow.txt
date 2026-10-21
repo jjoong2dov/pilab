@@ -1,0 +1,6 @@
+# 시험 중 정상적으로 찍히는 커널 메시지 (정규식). 여기 적힌 줄은 warn/error 로 세지 않는다.
+entered (blocking|forwarding|disabled) state
+link becomes ready
+entered promiscuous mode
+left promiscuous mode
+apparmor="DENIED" operation="connect".*profile="tcpdump" name="run/systemd/userdb/
