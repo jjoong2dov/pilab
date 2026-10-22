@@ -76,9 +76,11 @@ class Capture:
         cap.count
     """
 
-    def __init__(self, ctx, host, iface, bpf, seconds, direction="in"):
+    def __init__(self, ctx, host, iface, bpf, seconds, direction="in", ether=False):
         self.ctx, self.host, self.seconds = ctx, host, seconds
-        self.cmd = f"tcpdump -i {q(iface)} -Q {direction} -nn -l -q {q(bpf)}"
+        # IP 가 아닌 프레임(LLDP 등)은 MAC 주소를 찍어야(-e) 패킷 줄에 ' > ' 가 생겨 셀 수 있다
+        link = " -e" if ether else ""
+        self.cmd = f"tcpdump -i {q(iface)} -Q {direction} -nn -l -q{link} {q(bpf)}"
         self.count, self.lines = None, []
 
     def __enter__(self):

@@ -7,6 +7,8 @@ from .util import Capture, has_iface, ping, wait_for
 
 TEST_MAC = "02:00:5e:00:53:99"   # 시험 전용 MAC (로컬 관리 주소. 시험망에서 쓰는 MAC 과 겹치지 않게)
 TEST_IP = "192.0.2.99"
+LLDP_MARK = "pilab-BR-009"  # BR-009 시험 프레임의 Chassis ID. BPF 가 4바이트씩 비교하므로 길이는 4의 배수
+LLDP_COUNT = 10
 
 
 @case("BR-001", "L2", "untagged 프레임이 LAN↔WAN 으로 전달된다")
@@ -137,3 +139,63 @@ def lan_isolation(ctx):
     # 포트가 하나뿐인 기본 랩에서는 SKIP 된다. USB 이더넷을 하나 더 달면 lab.yaml 에 lan1 을 적는다.
     loss = ping(ctx.pc, ctx.dut.vars["lan1_peer_ip"], count=5)
     expect(loss == 100, "LAN 포트 사이로 프레임이 지나감")
+
+
+@case("BR-009", "L2", "LLDP 프레임은 LAN 에서 WAN 으로 전달하지 않는다")
+def lldp_not_forwarded(ctx):
+    # pib 에 0개만 보고 판정하면 거짓 PASS 가 난다. 그래서 다음을 함께 본다.
+    #  - 시험 LLDP 가 pc 에서 나가고 DUT LAN 포트에 들어왔는지. DUT 나 단말의 lldpd 가 보내는
+    #    LLDP 와 섞이지 않게 Chassis ID 에 표식을 넣고 그것만 센다.
+    #  - 같은 내용을 pib MAC 앞으로, 링크 로컬이 아닌 EtherType 으로 보낸 대조 프레임이 pib 에 오는지.
+    #    안 오면 WAN 배선·pib 인터페이스·캡처 문제라 'pib 에 0개'는 증거가 못 된다.
+    #  - pib 에서는 VLAN 태그가 붙어 와도 센다. 태그가 프레임 안에 남아 있으면 EtherType·표식이
+    #    4바이트 밀리므로 태그 없는 위치와 태그 하나 뒤 위치를 둘 다 본다. (커널이 태그를 떼어
+    #    따로 두는 경우는 태그 없는 위치에 걸린다)
+    send = ctx.helper(ctx.pc, "lldp_send.py")  # 캡처를 열기 전에 올린다
+    nic = ctx.pc.vars["nic"]
+    pc_mac, pib_mac = _mac(ctx.pc), _mac(ctx.pib)
+    mark = LLDP_MARK.encode()
+
+    def marked(at):  # at = Chassis ID 값이 시작하는 위치 (태그 없으면 이더넷 헤더 14 + TLV 헤더 2 + subtype 1)
+        return " and ".join(f"ether[{at + i}:4] = 0x{mark[i:i + 4].hex()}" for i in range(0, len(mark), 4))
+
+    untagged = f"ether[12:2] = 0x88cc and {marked(17)}"
+    tagged = f"(ether[12:2] = 0x8100 or ether[12:2] = 0x88a8) and ether[16:2] = 0x88cc and {marked(21)}"
+    lldp = f"ether dst 01:80:c2:00:00:0e and {untagged}"
+    leak = f"ether dst 01:80:c2:00:00:0e and (({untagged}) or ({tagged}))"
+    control = f"ether dst {pib_mac} and ether src {pc_mac} and {marked(17)}"
+    errors = []
+
+    def send_frames(extra=""):
+        # 실패해도 여기서 멈추지 않는다. 캡처를 끝까지 받아 누출부터 판정해야 한다
+        res = ctx.pc.run(f"python3 {q(send)} {q(nic)} --chassis {q(LLDP_MARK)} --count {LLDP_COUNT} {extra}",
+                         timeout=15)
+        if not res.ok or not res.out.strip().isdigit():
+            errors.append(f"LLDP 송신기 실패 rc={res.rc}: {res.err.strip()[:200]}")
+            return 0
+        return int(res.out)
+
+    lan = ctx.dut.vars.get("lan", "lan0")
+    with Capture(ctx, ctx.pc, nic, lldp, seconds=8, direction="out", ether=True) as left, \
+         Capture(ctx, ctx.dut, lan, lldp, seconds=8, ether=True) as at_lan, \
+         Capture(ctx, ctx.pib, ctx.pib.vars["nic"], leak, seconds=8, ether=True) as arrived, \
+         Capture(ctx, ctx.pib, ctx.pib.vars["nic"], control, seconds=8, ether=True) as ctl:
+        sent = send_frames()
+        ctl_sent = send_frames(f"--dst {q(pib_mac)} --ethertype 0x88b5")  # IEEE 802 실험용 EtherType
+    ctx.measure("sent", sent)
+    ctx.measure("control_sent", ctl_sent)
+    ctx.measure("lldp_left_pc", left.count)
+    ctx.measure("lldp_reached_dut_lan", at_lan.count)
+    ctx.measure("lldp_reached_pib", arrived.count)
+    ctx.measure("control_reached_pib", ctl.count)
+    # 누출은 송신·대조 쪽 개수가 모자라도 그 자체로 요구 위반이다
+    expect(arrived.count == 0, f"막혀야 할 LLDP {arrived.count}개가 pib 에 도착")
+    if errors:
+        raise Blocked(f"{errors[0]} (차단 판정 불가)")
+    if left.count < LLDP_COUNT:
+        raise Blocked(f"LLDP 가 pc 에서 {LLDP_COUNT}개 중 {left.count}개만 나감 (송신기 확인, 차단 판정 불가)")
+    if at_lan.count < LLDP_COUNT:
+        raise Blocked(f"LLDP 가 DUT LAN 포트에 {LLDP_COUNT}개 중 {at_lan.count}개만 옴 (랩 경로 문제, 차단 판정 불가)")
+    if ctl.count < LLDP_COUNT:
+        raise Blocked(f"대조 프레임이 pib 에 {LLDP_COUNT}개 중 {ctl.count}개만 옴 "
+                      "(WAN 배선·pib 인터페이스·캡처 확인, 차단 판정 불가)")

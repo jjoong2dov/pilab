@@ -17,6 +17,7 @@ ROWS = [
     ("BR-006", "L2", "MTU 1500", "IP 1500B 손실 0%, IP 1508B(DF) 손실 100%"),
     ("BR-007", "L2", "LAN 포트 간 격리", "LAN 포트 사이 ping 손실 100% (LAN 포트 2개 필요)"),
     ("BR-008", "L2", "루프 방지(STP)", "루프 구성 시 한 포트 blocking (수동 시험)"),
+    ("BR-009", "L2", "LLDP 비전달", "pc 송신 10개, DUT LAN 도착 10개, 대조 프레임 pib 도착 10개 확인, pib LLDP 도착 0개"),
     ("PERF-001", "PERF", "상향 TCP 처리량", "lab.yaml expect.tcp_mbps 이상"),
     ("PERF-002", "PERF", "하향 TCP 처리량", "lab.yaml expect.tcp_mbps 이상"),
     ("PERF-003", "PERF", "UDP 손실", "expect.udp_mbps 에서 손실 expect.udp_loss_pct 이하"),

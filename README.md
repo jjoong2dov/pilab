@@ -1,7 +1,7 @@
 # pilab — 라즈베리 파이 네트워크 시험 자동화 실습 코드
 
 전자책 《라즈베리 파이로 만드는 네트워크 시험 자동화》(시리즈 《라즈베리 파이 × AI 실전 개발실》 1권)의 실습 저장소입니다.
-책의 명령은 태그 `book1-v1.2` 기준입니다. (`book1-v1.0`, `book1-v1.1` 은 이전 공개본입니다. v1.2 를 쓰십시오.)
+책의 명령은 태그 `book1-v1.2` 기준입니다. 이 가지(태그 `book1-v1.2-br009`)는 16장에서 만든 시험 BR-009(LLDP 미전달)를 더한 결과입니다. (`book1-v1.0`, `book1-v1.1` 은 이전 공개본입니다. v1.2 를 쓰십시오.)
 
 라즈베리 파이 한 대(또는 리눅스 PC 한 대) 안에 네트워크 네임스페이스로 시험 랩을 만들고, 그 위에서 시험 실행기·증거 로그·엑셀 결과표·회귀 비교를 실습합니다.
 
@@ -31,9 +31,9 @@ sudo sh netns/up.sh                          # 가상 랩 만들기
 sudo .venv/bin/python -m pitest run --lab lab.netns.yaml --plan plan/plan.xlsx
 sudo sh netns/down.sh                        # 가상 랩 지우기
 ```
-예상 결과: PASS 20, SKIP 1 (BR-007 은 LAN 포트가 2개 필요해 SKIP). 라즈베리 파이 4 에서 약 1분 걸립니다. `sudo` 로 실행해도 결과 폴더와 시험표의 주인은 실행한 사용자로 돌려 놓습니다.
+예상 결과: PASS 21, SKIP 1 (BR-009 포함) (BR-007 은 LAN 포트가 2개 필요해 SKIP). 라즈베리 파이 4 에서 약 1분 걸립니다. `sudo` 로 실행해도 결과 폴더와 시험표의 주인은 실행한 사용자로 돌려 놓습니다.
 
-결함을 일부러 넣어 시험이 잡는지 볼 수 있습니다: `sudo sh netns/inject.sh vlan|flood|nat|lossy|leak300` (되돌리기는 `down.sh` 후 `up.sh`).
+결함을 일부러 넣어 시험이 잡는지 볼 수 있습니다: `sudo sh netns/inject.sh vlan|flood|nat|lossy|leak300|lldpfwd` (되돌리기는 `down.sh` 후 `up.sh`).
 
 ## 자주 쓰는 명령
 | 명령 | 하는 일 |
@@ -49,7 +49,7 @@ sudo sh netns/down.sh                        # 가상 랩 지우기
 |---|---|
 | `pitest/` | 실행기: 장비 연결, 시험 등록, 증거 기록, 전수 실행, 엑셀, 비교, 감시 |
 | `cases/` | 시험 케이스 (BASE, L2, PERF, NAT, MCAST, QOS) |
-| `helpers/` | 장비에 올려서 쓰는 도우미 (멀티캐스트 송수신) |
+| `helpers/` | 장비에 올려서 쓰는 도우미 (멀티캐스트 송수신, LLDP 송신) |
 | `netns/` | 가상 랩 만들기·지우기, 결함 주입 |
 | `plan/` | 시험표 만들기 |
 | `tools/` | 반복 실행 |
