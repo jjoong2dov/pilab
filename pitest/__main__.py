@@ -7,6 +7,7 @@
   python -m pitest summary results/RUN
   python -m pitest compare results/OLD results/NEW
   python -m pitest slow results/RUN
+  python -m pitest measures results/RUN1 results/RUN2 ... [--only 'PERF-*']   측정값과 중앙값
   python -m pitest watch results/RUN [--every 1800] [--notify CMD]
 """
 
@@ -78,16 +79,18 @@ def cmd_run(args, only=None, resume=None):
     unknown_ex = [i for i in exclude if i not in {c.id for c in cases}]
     if unknown_ex:  # 패턴이나 오타는 아무것도 빼지 못한 채 조용히 넘어가므로 막는다
         raise SystemExit(f"제외 목록의 ID 가 이번 실행 시험에 없습니다(패턴은 쓸 수 없음): {', '.join(unknown_ex)}")
+    res_root = Path(args.results).resolve()  # .. 이나 링크를 풀어 둔다. 주인을 바꿀 폴더를 정확히 가리키게
+    new_dirs = [d for d in (res_root, *res_root.parents) if not d.exists()]  # 이번 실행이 새로 만드는 폴더
     with lab_lock(lab):
-        run = Run(lab, cases, root=args.results, exclude=exclude, resume=resume or args.resume)
-        print(f"실행 {run.dir}  시험 {len(cases)}개  DUT {run.meta['dut_version']}")
+        run = Run(lab, cases, root=res_root, exclude=exclude, resume=resume or args.resume)
+        print(f"실행 {run.dir}  시험 {len(cases)}개  DUT {run.meta['dut_version']}  코드 {run.meta['code']}")
         try:
             results = run.execute()
         except KeyboardInterrupt:
             results = run.results  # 끊기기 전까지의 결과는 엑셀에 남긴다
         # 엑셀도 잠금 안에서 쓴다. 다른 실행이 같은 시험표를 동시에 저장하면 한쪽이 사라진다.
         unknown = plan.apply_results(args.plan, results, run.meta, run.dir)
-        give_back(run.dir, args.plan)
+        give_back(run.dir, args.plan, new_dirs=new_dirs)
     if unknown:
         print(f"시험표에 없는 결과: {', '.join(unknown)}")
     print(report.summary(run.dir))
@@ -98,9 +101,10 @@ def cmd_run(args, only=None, resume=None):
     return 0 if all(r["status"] in ("PASS", "SKIP") for r in results) else 1
 
 
-def give_back(*paths):
+def give_back(*paths, new_dirs=()):
     """sudo 로 돌렸으면 결과 폴더와 시험표의 주인을 sudo 를 부른 사용자로 돌려준다.
-    그러지 않으면 다음에 sudo 없이 시험표를 열어 고치거나 결과를 지울 때 권한 오류가 난다."""
+    그러지 않으면 다음에 sudo 없이 시험표를 열어 고치거나 결과를 지울 때 권한 오류가 난다.
+    new_dirs 는 이번 실행이 새로 만든 결과 상위 폴더들이다. 원래 있던 폴더의 주인은 바꾸지 않는다."""
     uid, gid = os.environ.get("SUDO_UID"), os.environ.get("SUDO_GID")
     if os.geteuid() != 0 or not uid or not gid:
         return
@@ -108,9 +112,9 @@ def give_back(*paths):
         # 심볼릭 링크는 따라가지 않는다(링크가 가리키는 바깥 파일의 주인을 바꾸지 않게)
         for q in [p, *(p.rglob("*") if p.is_dir() and not p.is_symlink() else [])]:
             os.lchown(q, int(uid), int(gid))
-        # results/ 폴더 자체는 이번에 root 로 만들어진 경우에만 돌려준다
-        if p.is_dir() and p.parent.stat().st_uid == 0:
-            os.lchown(p.parent, int(uid), int(gid))
+    for d in new_dirs:
+        if d.is_dir() and not d.is_symlink():
+            os.lchown(d, int(uid), int(gid))
 
 
 def cmd_rerun_failed(args):
@@ -140,6 +144,9 @@ def main(argv=None):
         p.add_argument("--results", default="results")
     for name in ("summary", "slow"):
         sub.add_parser(name).add_argument("run")
+    p = sub.add_parser("measures")
+    p.add_argument("runs", nargs="+")
+    p.add_argument("--only", nargs="*")
     p = sub.add_parser("compare")
     p.add_argument("old")
     p.add_argument("new")
@@ -150,6 +157,8 @@ def main(argv=None):
     p.add_argument("--notify", default="")
     p.add_argument("--once", action="store_true")
     args = ap.parse_args(argv)
+    # nohup 으로 파일에 쓸 때도 진행 줄이 바로 보이게 한 줄씩 내보낸다 (tail -f 로 지켜본다)
+    sys.stdout.reconfigure(line_buffering=True)
 
     if args.cmd == "list":
         for c in select():
@@ -170,6 +179,8 @@ def main(argv=None):
         print(report.summary(args.run))
     elif args.cmd == "slow":
         print(report.slowest(args.run))
+    elif args.cmd == "measures":
+        print(report.measures(args.runs, args.only))
     elif args.cmd == "compare":
         print(report.format_compare(report.compare(args.old, args.new)))
     elif args.cmd == "watch":

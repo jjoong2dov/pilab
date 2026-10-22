@@ -190,3 +190,65 @@ def test_plan_rejects_duplicate_id_and_missing_file(tmp_path):
         plan.read_plan(p)
     with pytest.raises(SystemExit, match="시험표가 없습니다"):
         plan.read_plan(tmp_path / "none.xlsx")
+
+
+def test_plan_refuses_moved_columns(tmp_path):
+    from openpyxl import load_workbook
+    p = tmp_path / "plan.xlsx"
+    plan.new_plan(p, [("A-1", "X", "a", "c", "")])
+    wb = load_workbook(p)
+    wb[plan.SHEET].insert_cols(3)  # 열을 하나 끼워 넣으면 위치로 읽는 칸이 모두 어긋난다
+    wb.save(p)
+    with pytest.raises(SystemExit, match="머리글"):
+        plan.read_plan(p)
+
+
+def test_logscan_uses_journal_priority():
+    lines = [json.dumps({"MESSAGE": "hwmon hwmon1: Undervoltage detected!", "PRIORITY": "2"}),
+             json.dumps({"MESSAGE": "usb 1-1: device descriptor read failed, retrying", "PRIORITY": "6"}),
+             json.dumps({"MESSAGE": "eth0: link down", "PRIORITY": "4"})]
+    assert [h["level"] for h in logscan.scan(lines)] == ["crit", "warn"]
+
+
+def test_dut_version_must_be_readable(tmp_path, registry):
+    p = tmp_path / "lab.yaml"
+    p.write_text(yaml.safe_dump({"name": "unit", "dut_version_cmd": "false",
+                                 "hosts": {"dut": {"transport": "local"}}}))
+    C.case("A-1", "A", "x")(lambda ctx: None)
+    with pytest.raises(SystemExit, match="DUT 버전을 읽지 못했습니다"):
+        Run(load_lab(p), C.select(), root=tmp_path / "results", log=lambda *_: None)
+
+
+def test_resume_refuses_changed_code(lab, tmp_path, registry, monkeypatch):
+    from pitest import runner
+    C.case("A-1", "A", "x")(lambda ctx: None)
+    r = Run(lab, C.select(), root=tmp_path / "results", log=lambda *_: None)
+    r._save()
+    monkeypatch.setattr(runner, "code_id", lambda: "changed")
+    with pytest.raises(SystemExit, match="시험 코드가 바뀌었습니다"):
+        Run(lab, C.select(), resume=r.dir, log=lambda *_: None)
+
+
+def test_compare_shows_condition_changes_and_measures(tmp_path):
+    def mk(name, meta, mbps):
+        d = tmp_path / name
+        d.mkdir()
+        (d / "meta.json").write_text(json.dumps(meta))
+        (d / "run.json").write_text(json.dumps({"results": [
+            {"id": "PERF-001", "status": "PASS", "measured": {"mbps": mbps}}]}))
+        return d
+    a = mk("a", {"dut_version": "1", "code": "x"}, 300)
+    b = mk("b", {"dut_version": "1", "code": "y"}, 280)
+    c = mk("c", {"dut_version": "1", "code": "y"}, 310)
+    d = mk("d", {"dut_version": "1", "code": "y"}, 300)
+    assert "시험 코드: x -> y" in report.format_compare(report.compare(a, b))
+    assert "중앙값 PERF-001   mbps=300" in report.measures([b, c, d], ["PERF-*"])
+    assert "중앙값을 내지 않습니다" in report.measures([a, b, c], ["PERF-*"])  # 코드가 다른 실행은 섞지 않는다
+
+
+def test_spawn_stops_inside_the_host(lab):
+    # 일찍 끌 때 장비 안의 프로세스가 신호를 받아 마무리 출력(tcpdump 의 통계 같은)을 남긴다
+    p = lab["pc"].spawn("sh -c 'trap \"echo final-stats >&2; exit 0\" TERM; while :; do sleep 0.1; done'", limit=30)
+    assert p.pid
+    out, err, alive = p.finish(grace=0.2)
+    assert alive and "final-stats" in err and "@@pitest-pid" not in err

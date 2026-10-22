@@ -3,7 +3,7 @@
 from pitest.case import Blocked, case, expect
 from pitest.lab import q
 
-from .util import Capture, ping, wait_for
+from .util import Capture, has_iface, ping, wait_for
 
 TEST_MAC = "02:00:5e:00:53:99"   # 시험 전용 MAC (로컬 관리 주소. 시험망에서 쓰는 MAC 과 겹치지 않게)
 TEST_IP = "192.0.2.99"
@@ -25,16 +25,35 @@ def vlan_allowed(ctx):
 
 @case("BR-003", "L2", "허용하지 않은 VLAN(300) 프레임은 버린다")
 def vlan_denied(ctx):
-    # 시험용 VLAN 인터페이스를 양쪽 단말에 만들고, 끝나면 지운다
-    for host, me, peer in ((ctx.pc, "192.0.2.130", "192.0.2.140"), (ctx.pib, "192.0.2.140", "192.0.2.130")):
+    # ping 손실만 보면 거짓 PASS 가 날 수 있다. VLAN 300 에서는 ARP 부터 막히므로 요청이
+    # 아예 나가지 않아도 '손실 100%' 가 된다. 그래서 상대 MAC 을 정적 이웃으로 넣어 ARP 없이
+    # 요청이 나가게 하고, 보낸 쪽에서 나간 개수와 받는 쪽에 도착한 개수를 함께 센다.
+    ends = ((ctx.pc, "192.0.2.130", ctx.pib, "192.0.2.140"), (ctx.pib, "192.0.2.140", ctx.pc, "192.0.2.130"))
+    for host, me, peer_host, peer in ends:
+        # pl300 이 이미 있으면 남의 것일 수 있으므로 만들지도 지우지도 않는다
+        if has_iface(host, "pl300"):
+            raise Blocked(f"{host.name} 에 pl300 인터페이스가 이미 있음 (이전 시험의 흔적인지 확인)")
+    for host, me, peer_host, peer in ends:
         nic = q(host.vars["nic"])
+        ctx.defer(lambda h=host: h.run("[ ! -e /sys/class/net/pl300 ] || ip link del pl300", check=True),
+                  f"{host.name} VLAN 300 삭제")
         host.run(f"ip link add link {nic} name pl300 type vlan id 300", check=True)
-        ctx.defer(lambda h=host: h.run("ip link del pl300", check=True), f"{host.name} VLAN 300 삭제")
         host.run(f"ip addr add {me}/32 dev pl300 && ip link set pl300 up && "
-                 f"ip route add {peer}/32 dev pl300", check=True)
-    loss = ping(ctx.pc, "192.0.2.140", count=10)
+                 f"ip route add {peer}/32 dev pl300 && "
+                 f"ip neigh replace {peer} lladdr {_mac(peer_host)} dev pl300 nud permanent", check=True)
+    echo = "icmp[icmptype] == icmp-echo and src 192.0.2.130 and dst 192.0.2.140"
+    # 받는 쪽은 태그와 상관없이 센다. DUT 가 태그를 떼거나 다른 VLAN 으로 바꿔 흘려도 '도착'이다.
+    # (libpcap 은 'vlan' 뒤의 조건을 태그 안쪽으로 읽으므로 태그 없는 경우를 먼저 쓴다)
+    with Capture(ctx, ctx.pc, ctx.pc.vars["nic"], f"vlan 300 and {echo}", seconds=10, direction="out") as left, \
+         Capture(ctx, ctx.pib, ctx.pib.vars["nic"], f"({echo}) or (vlan and {echo})", seconds=10) as arrived:
+        loss = ping(ctx.pc, "192.0.2.140", count=10)
     ctx.measure("loss_pct", loss)
-    expect(loss == 100, f"막혀야 할 VLAN 300 이 {100 - loss:.0f}% 통과")
+    ctx.measure("vlan300_left_pc", left.count)
+    ctx.measure("vlan300_reached_pib", arrived.count)
+    if left.count < 10:
+        raise Blocked(f"VLAN 300 요청이 pc 에서 10개 중 {left.count}개만 나감 (단말 VLAN·이웃 설정 확인, 차단 판정 불가)")
+    expect(arrived.count == 0, f"막혀야 할 VLAN 300 요청 {arrived.count}개가 pib 에 도착")
+    expect(loss == 100, f"막혀야 할 VLAN 300 이 {100 - loss:.0f}% 응답받음")
 
 
 def _fdb(ctx):
@@ -66,7 +85,7 @@ def mac_ageing(ctx):
     ctx.defer(lambda: d.run(f"ip link set br0 type bridge ageing_time {int(old)}", check=True), "에이징 시간 복원")
     d.run("ip link set br0 type bridge ageing_time 500", check=True)  # 5초 (단위 1/100초)
     # plage 가 이미 있으면 남의 것일 수 있으므로 만들지도 지우지도 않는다
-    if pc.run("[ -e /sys/class/net/plage ]").ok:
+    if has_iface(pc, "plage"):
         raise Blocked("pc 에 plage 인터페이스가 이미 있음 (이전 시험의 흔적인지 확인)")
     ctx.defer(lambda: pc.run("[ ! -e /sys/class/net/plage ] || ip link del plage", check=True), "시험 MAC 삭제")
     pc.run(f"ip link add link {q(pc.vars['nic'])} name plage address {TEST_MAC} type macvlan mode bridge",

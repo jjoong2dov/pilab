@@ -9,6 +9,7 @@
 - 콘솔 로그의 warn/error 는 판정을 바꾸지 않고 결과에 따로 붙인다 (13장).
 """
 
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -18,7 +19,17 @@ from .case import BLOCKED, FAIL, PASS, SKIP, Blocked, Fail, Skip
 from .evidence import Recorder, stamp
 from .lab import CommandFailed
 
-HELPERS = Path(__file__).resolve().parent.parent / "helpers"
+ROOT = Path(__file__).resolve().parent.parent
+HELPERS = ROOT / "helpers"
+
+
+def code_id():
+    """시험 코드(pitest·cases·helpers)의 지문. 결과가 어떤 코드로 나왔는지 남기고,
+    코드가 바뀐 채로 이어서 돌리거나 비교하는 것을 알아채려고 쓴다."""
+    h = hashlib.sha256()
+    for f in sorted(p for d in ("pitest", "cases", "helpers") for p in (ROOT / d).rglob("*.py")):
+        h.update(str(f.relative_to(ROOT)).encode() + b"\0" + f.read_bytes())
+    return h.hexdigest()[:12]
 
 
 class LabDirty(Exception):
@@ -129,14 +140,25 @@ class Run:
     def _meta(self):
         p = self.dir / "meta.json"
         dut = self.lab.hosts.get("dut")
-        version = dut.run(self.lab.dut_version_cmd).out.strip() if dut else ""
+        version = ""
+        if dut:
+            res = dut.run(self.lab.dut_version_cmd)
+            version = res.out.strip()
+            # 버전을 못 읽었는데 빈 값으로 진행하면, 결과표에 어떤 DUT 의 결과인지가 빠진다
+            if not res.ok or not version:
+                raise SystemExit(f"DUT 버전을 읽지 못했습니다 (rc={res.rc}): {self.lab.dut_version_cmd}\n"
+                                 f"{res.err.strip()[:200]}")
+        code = code_id()
         if p.exists():
             meta = json.loads(p.read_text(encoding="utf-8"))
             if meta["dut_version"] != version:
                 raise SystemExit(f"DUT 버전이 바뀌었습니다({meta['dut_version']} → {version}). 새로 실행하세요.")
+            if meta.get("code") != code:
+                raise SystemExit(f"시험 코드가 바뀌었습니다({meta.get('code')} → {code}). 새로 실행하세요.")
             return meta
         meta = {"lab": self.lab.name, "dut_version": version, "tester": self.lab.tester,
-                "started": stamp(), "cases": [c.id for c in self.cases]}
+                "started": stamp(), "cases": [c.id for c in self.cases], "code": code,
+                "expect": self.lab.expect}
         p.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         return meta
 

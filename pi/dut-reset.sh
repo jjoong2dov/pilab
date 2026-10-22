@@ -1,4 +1,5 @@
 #!/bin/sh
+# [설계안] 실물 랩용. veth 로 설정·되돌리기만 확인했고, 실제 배선 전체 시험은 확인하지 않았다 (책 17장).
 # dut-setup.sh 로 바꾼 것을 되돌린다. 유선 포트의 원래 주소는 NetworkManager 가 다시 잡는다.
 # 되돌릴 근거는 dut-setup.sh 가 남긴 /run/pilab 기록이다. 기록이 없으면 아무것도 지우지 않는다.
 STATE=/run/pilab

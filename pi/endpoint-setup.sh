@@ -1,4 +1,5 @@
 #!/bin/sh
+# [설계안] 실물 랩용. veth 로 설정·되돌리기만 확인했고, 실제 배선 전체 시험은 확인하지 않았다 (책 17장).
 # 단말(파이 B 또는 PC)의 시험용 유선 포트를 설정한다. netns/up.sh 의 pc·pib 와 같은 주소다.
 #   sudo sh endpoint-setup.sh pib eth0               파이 B (WAN 쪽)
 #   sudo sh endpoint-setup.sh pc enx00005e005301     PC 의 USB 이더넷 (LAN 쪽)

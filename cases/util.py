@@ -106,6 +106,14 @@ class Capture:
         return False
 
 
+def has_iface(host, name):
+    """인터페이스가 있는지. 조회 자체가 실패하면(ssh 끊김 등) '없음'으로 읽지 않고 BLOCKED."""
+    res = host.run(f"if [ -e /sys/class/net/{q(name)} ]; then echo yes; else echo no; fi", timeout=10)
+    if not res.ok or res.out.strip() not in ("yes", "no"):
+        raise Blocked(f"{host.name} 에서 {name} 인터페이스 확인 실패 rc={res.rc}")
+    return res.out.strip() == "yes"
+
+
 def wait_for(cond, timeout, step=0.5):
     """cond() 가 참이 될 때까지 기다린다. 걸린 시간(초) 또는 None."""
     start = time.time()

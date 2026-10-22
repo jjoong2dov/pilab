@@ -1,8 +1,8 @@
 """랩 구성(lab.yaml)과 장비에 명령을 보내는 방법.
 
 장비마다 transport 가 netns 이면 `ip netns exec`, ssh 이면 ssh 로 명령을 보낸다.
-시험 코드는 어느 쪽인지 몰라도 된다. 그래서 노트북 가상 랩에서 만든 시험을
-라즈베리 파이 랩에서 그대로 돌릴 수 있다.
+시험 코드는 어느 쪽인지 몰라도 된다. 그래서 가상 랩에서 만든 시험을 ssh 로 닿는
+실물 장비에도 같은 코드로 보낼 수 있다(장비별 명령이 같다면. 17장).
 
 lab.yaml 은 실행 권한을 가진 설정이다(dut_version_cmd, console_cmd 는 셸 명령 그대로
 실행된다). 남이 준 lab.yaml 은 읽어 보고 쓴다.
@@ -21,6 +21,7 @@ from pathlib import Path
 import yaml
 
 SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=5"]
+PID_MARK = "@@pitest-pid "  # spawn() 이 장비 쪽 PID 를 알려 주는 줄
 q = shlex.quote  # 설정값을 명령에 넣을 때는 항상 q() 로 감싼다
 
 
@@ -87,12 +88,14 @@ class Host:
 
         limit 초가 지나면 장비 쪽에서 스스로 끝나게 timeout 으로 감싼다. ssh 를 끊어도
         원격 프로세스가 남지 않게 하려는 것이다. 돌려받은 Proc 은 반드시 stop() 한다.
+        장비 쪽 PID 를 먼저 알려 받아 두었다가, 일찍 끌 때는 장비 안에서 신호를 보낸다
+        (ssh 에서는 이 PC 의 ssh 를 끊어도 원격 tcpdump 가 통계를 내지 않는다).
         """
         cmd = f"exec timeout {int(limit)} {cmd}"
         if self.recorder:
             self.recorder.note(f"[{self.name}] spawn: {cmd}")
-        p = subprocess.Popen(self._argv(cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                             text=True, start_new_session=True)
+        p = subprocess.Popen(self._argv(f'echo "{PID_MARK}$$" >&2; {cmd}'), stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True, start_new_session=True)
         return Proc(self, cmd, p)
 
     def home(self):
@@ -124,6 +127,17 @@ class Proc:
         self.host, self.cmd, self.p = host, cmd, popen
         self.out = self.err = None
         self._pre = {"out": "", "err": ""}
+        self.pid = None
+        try:
+            if self.wait_ready(PID_MARK, timeout=10):
+                line = self._pre["err"].splitlines()[-1]
+                self._pre["err"] = self._pre["err"][: -len(line) - 1]
+                self.pid = int(line[len(PID_MARK):])
+        except BaseException:
+            # 아직 복구 목록에 오르기 전이다. 여기서 끊기면 직접 끈다
+            # (ssh 라면 원격 쪽은 spawn 의 timeout 이 limit 초 뒤에 끝낸다)
+            _kill(self.p)
+            raise
 
     def wait_ready(self, marker, timeout=10, stream="err"):
         """stream(err/out)에 marker 가 나올 때까지 기다린다 (tcpdump 의 'listening on' 등)."""
@@ -152,9 +166,16 @@ class Proc:
         if alive:
             time.sleep(grace)
             alive = self.p.poll() is None
-            _kill(self.p)
+            self._signal()
         out, err = self.stop()
         return out, err, alive
+
+    def _signal(self):
+        """장비 안에서 TERM 을 보낸다. timeout 이 받아 tcpdump 에 넘기고, tcpdump 는 통계를 찍고 끝난다.
+        PID 를 모르거나 신호를 못 보냈으면 이 PC 쪽 프로세스 그룹을 끈다."""
+        # 신호를 보낸 뒤 기다리며 출력을 받는 일은 stop() 의 communicate() 가 한다
+        if not (self.pid and self.host.run(f"kill -TERM {self.pid}", timeout=10).ok):
+            _kill(self.p)
 
     def stop(self, timeout=15):
         """끝나기를 기다렸다가, 안 끝나면 프로세스 그룹째 끈다. (out, err) 를 돌려준다."""

@@ -1,13 +1,14 @@
-# 라즈베리 파이 랩. 관리 연결은 Wi-Fi(mDNS 이름), 시험 트래픽은 유선.
+# [설계안 — 실제 배선으로 전체 시험을 확인하지 않았다. 책 17장 참고]
+# 라즈베리 파이 실물 랩. 관리 연결은 Wi-Fi(mDNS 이름), 시험 트래픽은 유선.
 #   PC(USB 이더넷) ── eth0 [파이 A: DUT] eth1(USB 이더넷) ── eth0 [파이 B]
 # 시험은 PC 에서 돌린다. PC 자신이 LAN 쪽 단말(pc)이다.
 name: pi-lab
 tester: 홍길동
 dut_version_cmd: "cat /run/pilab/version"
-console_cmd: "journalctl -k --since=@{since} --no-pager -o cat"
+console_cmd: "journalctl -k --since=@{since} --no-pager -o json --output-fields=MESSAGE,PRIORITY"
 expect:
   seconds: 5
-  # 아래 값은 예시다. 2장 '기준값 정하기'대로 PERF 를 5번 돌려 중앙값의 80% 로 바꾼다.
+  # 아래 값은 예시다. 7장 '기준값 정하기'대로 PERF 를 5번 돌려 중앙값의 80% 로 바꾼다.
   tcp_mbps: 300
   udp_mbps: 100
   udp_loss_pct: 1.0

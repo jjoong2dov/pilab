@@ -1,9 +1,9 @@
-# 노트북 가상 랩 (netns/up.sh 로 만든다). 이름·주소는 파이 랩(lab.pi.yaml)과 같다.
+# 가상 랩 (netns/up.sh 로 만든다). 파이 한 대나 리눅스 PC 한 대에서 돈다. 이름·주소는 실물 랩 설계안(lab.pi.yaml)과 같다.
 name: netns-lab
 tester: 홍길동
 dut_version_cmd: "echo netns-lab-$(uname -r)"
 # 시험 시작 이후 커널 로그. netns 는 커널을 공유하므로 호스트 전체 로그가 나온다.
-console_cmd: "journalctl -k --since=@{since} --no-pager -o cat"
+console_cmd: "journalctl -k --since=@{since} --no-pager -o json --output-fields=MESSAGE,PRIORITY"
 expect:
   seconds: 3
   tcp_mbps: 1000        # 가상 랩 기준. 파이 랩 값은 lab.pi.yaml 에

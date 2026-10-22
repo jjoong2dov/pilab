@@ -4,6 +4,9 @@
 요약 시트:     영역별 상태 개수 (매번 다시 만든다)
 실행이력 시트: 실행할 때마다 한 줄씩 쌓인다
 
+열은 이름이 아니라 위치(A~J)로 읽는다. 그래서 읽고 쓰기 전에 첫 줄의 머리글이 HEADERS 와
+같은지 보고, 다르면 멈춘다(열을 끼워 넣거나 옮긴 시험표에 결과를 엉뚱한 칸에 쓰지 않게).
+
 시험표가 원본이고 코드는 시험표를 따른다. 사람이 결과 칸에 N/A 를 적은 항목은
 실행하지 않고, 실행기는 N/A 와 INVESTIGATING 을 덮어쓰지 않는다.
 """
@@ -29,6 +32,14 @@ HEAD_FILL = PatternFill("solid", fgColor="1F4E78")
 
 def col(name):
     return HEADERS.index(name) + 1
+
+
+def check_headers(path, first_row):
+    got = [str(v).strip() if v is not None else "" for v in list(first_row)[:len(HEADERS)]]
+    if got != HEADERS:
+        raise SystemExit(f"시험표 머리글이 기준과 다릅니다: {path}\n"
+                         f"  기준: {' | '.join(HEADERS)}\n  지금: {' | '.join(got)}\n"
+                         "열을 끼워 넣거나 옮기지 말고, 덧붙일 열은 J열(증거) 오른쪽에 두십시오.")
 
 
 def new_plan(path, rows):
@@ -62,6 +73,7 @@ def read_plan(path):
     if not Path(path).exists():
         raise SystemExit(f"시험표가 없습니다: {path}\n먼저 만드십시오: .venv/bin/python plan/make_plan.py")
     ws = load_workbook(path, read_only=True)[SHEET]
+    check_headers(path, next(ws.iter_rows(max_row=1, values_only=True), ()))
     items, seen = [], {}
     for n, row in enumerate(ws.iter_rows(min_row=2, values_only=True), 2):
         if not row or not row[0]:
@@ -94,6 +106,7 @@ def apply_results(path, results, meta, run_dir):
     """실행 결과를 시험표에 반영한다. 시험표에 없는 ID 는 돌려준다."""
     wb = load_workbook(path)
     ws = wb[SHEET]
+    check_headers(path, [c.value for c in ws[1]])
     rows = {str(ws.cell(r, 1).value).strip(): r for r in range(2, ws.max_row + 1) if ws.cell(r, 1).value}
     unknown = []
     for res in results:

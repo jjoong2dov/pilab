@@ -1,4 +1,5 @@
 #!/bin/sh
+# [설계안] 실물 랩용. veth 로 설정·되돌리기만 확인했고, 실제 배선 전체 시험은 확인하지 않았다 (책 17장).
 # 라즈베리 파이 A 를 시험 대상(DUT)으로 만든다. netns/up.sh 의 dut 와 같은 설정이다.
 #   sudo sh dut-setup.sh [LAN포트] [WAN포트]     기본: eth0(내장) eth1(USB 이더넷)
 #

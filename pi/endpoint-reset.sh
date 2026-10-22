@@ -1,4 +1,5 @@
 #!/bin/sh
+# [설계안] 실물 랩용. veth 로 설정·되돌리기만 확인했고, 실제 배선 전체 시험은 확인하지 않았다 (책 17장).
 # endpoint-setup.sh 로 바꾼 것을 되돌린다: 시험용 VLAN 을 지우고, 원래 IPv4 주소·경로·NetworkManager 상태를 되살린다.
 #   sudo sh endpoint-reset.sh
 STATE=/run/pilab-endpoint

@@ -50,13 +50,26 @@ def _received(rx):
     return int(lines[-1])
 
 
+def _wan(ctx):
+    return ctx.dut.vars.get("wan", "wan0")
+
+
+def _reached_dut(ctx, at_wan):
+    """송신기가 '보냈다'고 해도 DUT 까지 왔는지는 따로 본다. 안 왔으면 'LAN 에 0개'는 증거가 아니다."""
+    ctx.measure("reached_dut_wan", at_wan.count)
+    if at_wan.count == 0:
+        raise Blocked("멀티캐스트가 DUT WAN 포트까지 오지 않음 (랩 경로 문제, 차단 판정 불가)")
+
+
 @case("MC-001", "MCAST", "가입하지 않은 그룹은 LAN 포트로 내보내지 않는다")
 def no_join_no_flood(ctx):
     send, _ = _deploy(ctx)
-    with Capture(ctx, ctx.pc, ctx.pc.vars["nic"], BPF, seconds=8) as cap:
+    with Capture(ctx, ctx.dut, _wan(ctx), BPF, seconds=8) as at_wan, \
+         Capture(ctx, ctx.pc, ctx.pc.vars["nic"], BPF, seconds=8) as cap:
         sent = _send(ctx, send)
     ctx.measure("sent", sent)
     ctx.measure("seen_on_lan", cap.count)
+    _reached_dut(ctx, at_wan)
     expect(cap.count == 0, f"가입 없이 {cap.count}개가 LAN 으로 나옴")
 
 
@@ -84,7 +97,9 @@ def leave_stops(ctx):
     ctx.note("탈퇴 직후 mdb:\n" + ctx.dut.run("bridge mdb show", check=True).out)
     time.sleep(ctx.expect.get("leave_wait_s", 3))  # 마지막 가입자 확인 질의(last member query) 시간
     # 2) 탈퇴 뒤에는 LAN 에 하나도 나오지 않아야 한다
-    with Capture(ctx, ctx.pc, ctx.pc.vars["nic"], BPF, seconds=8) as cap:
+    with Capture(ctx, ctx.dut, _wan(ctx), BPF, seconds=8) as at_wan, \
+         Capture(ctx, ctx.pc, ctx.pc.vars["nic"], BPF, seconds=8) as cap:
         _send(ctx, send)
     ctx.measure("seen_after_leave", cap.count)
+    _reached_dut(ctx, at_wan)
     expect(cap.count == 0, f"탈퇴 뒤에도 {cap.count}개가 LAN 으로 나옴")
