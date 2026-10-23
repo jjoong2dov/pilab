@@ -65,6 +65,7 @@ sudo sh netns/down.sh                        # 가상 랩 지우기
 ## 알려진 문제 (book1-v1.2)
 - `sudo` 없이 실행하는 등 시작 단계에서 실패하면 `results/` 아래에 빈 실행 폴더가 남습니다(`run.json` 이 없어 지워도 됩니다).
 - 그 직후 **같은 1초 안에** 다시 실행하면 같은 이름의 폴더를 만들려다 `FileExistsError` 로 멈춥니다. 1초 뒤 다시 실행하면 됩니다. 다음 판에서 고칠 예정입니다.
+- `tools/repeat.sh` 를 띄운 창에서 Ctrl-C 를 누르면 화면 출력을 받던 `tee` 도 함께 끝나, 멈춘 실행의 결과가 엑셀에 반영되지 않습니다(`run.json` 은 남으므로 `--resume` 으로 이어 돌리면 반영됩니다). 반복을 멈출 때는 다른 창에서 `sudo pkill -INT -f '^\.venv/bin/python -m pitest run'` 을 쓰십시오.
 
 ## 문의
 GitHub Issues 에 남겨 주십시오.
